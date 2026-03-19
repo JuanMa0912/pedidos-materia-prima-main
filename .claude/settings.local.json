@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(npx next build)",
+      "Bash(Remove-Item -Recurse -Force \"c:\\\\Users\\\\juanf\\\\OneDrive\\\\Documentos\\\\Proyectos\\\\pedidos-materia-prima\\\\.next\")"
+    ]
+  }
+}
