@@ -2,37 +2,15 @@
 
 ## 1. Proposito y alcance
 
-Este documento es la referencia tecnica canonica de `pedidos-materia-prima-main`.
+Este documento es la referencia tecnica canonica de `pedidos-materia-prima-main`. Resume arquitectura, estructura, modulos, rutas, modelo de datos esperado en Supabase, flujos, despliegue y riesgos.
 
-Describe:
-
-- arquitectura del sistema;
-- estructura del repositorio;
-- modulos funcionales;
-- rutas web y endpoints;
-- modelo de datos esperado en Supabase;
-- flujos operativos;
-- despliegue, automatizacion y riesgos tecnicos.
-
-La documentacion se construyo a partir del codigo fuente real del repositorio. Como el proyecto no incluye migraciones SQL ni contratos OpenAPI, varias partes del esquema de datos se documentan como inferencias verificadas contra consultas, inserts, RPC y buckets usados por la aplicacion.
+La documentacion se construyo a partir del codigo fuente real del repositorio. Como el proyecto no incluye migraciones SQL ni contratos OpenAPI, varias partes del esquema se documentan como inferencias verificadas contra consultas, inserts, RPC y buckets usados por la aplicacion.
 
 ## 2. Resumen ejecutivo
 
-La aplicacion resuelve tres dominios principales:
+La aplicacion cubre tres dominios: pedidos de materia prima por zona o planta, inventario operativo con cobertura y consumos manuales, y prestamos o devoluciones de canastillas con firma digital.
 
-1. Pedidos de materia prima por zona o planta.
-2. Inventario operativo, cobertura y consumos manuales.
-3. Prestamos y devoluciones de canastillas con firma digital.
-
-Stack principal:
-
-- `Next.js 15` con `App Router`
-- `React 19` y `TypeScript`
-- `Supabase` para database, auth, storage y RPC
-- `Tailwind CSS 4`, `Radix UI` y componentes estilo `shadcn/ui`
-- `zod` para validaciones
-- `pdfkit`, `jsPDF` y utilidades HTML a imagen para exportes
-- `Resend` para alertas criticas por correo
+Stack principal: `Next.js 15`, `React 19`, `TypeScript`, `Supabase`, `Tailwind CSS 4`, `Radix UI`, `zod`, `pdfkit`, `jsPDF`, utilidades HTML a imagen y `Resend`.
 
 Arquitectura general:
 
@@ -43,15 +21,12 @@ Navegador
   `- fetch a /api/*
 
 Next.js
-  |- Rutas web bajo app/
-  |- Route handlers bajo app/api/
-  |- Exporte PDF bajo app/inventario/api/export/[id]
+  |- Rutas web y handlers bajo app/
+  |- Exporte PDF bajo /inventario/api/export/[id]
   `- middleware.ts
 
 Servicios externos
-  |- Supabase Database
-  |- Supabase Storage
-  |- Supabase Auth Admin
+  |- Supabase Database / Storage / Auth Admin
   `- Resend
 ```
 
@@ -59,208 +34,73 @@ Servicios externos
 
 ### 3.1 Principio general
 
-No existe un backend separado del frontend. El backend del sistema es la combinacion de:
-
-- pantallas de `Next.js`,
-- route handlers de `Next.js`,
-- operaciones directas desde el navegador a Supabase,
-- RPC y tablas de Supabase,
-- buckets de Storage,
-- integraciones externas como Resend.
+No existe un backend separado del frontend. La logica se reparte entre pantallas de `Next.js`, route handlers, llamadas directas a Supabase, RPC, Storage e integraciones externas.
 
 ### 3.2 Capas
 
-| Capa | Responsabilidad |
-| --- | --- |
-| Presentacion | Layout, navegacion y pantallas de negocio bajo `app/`. |
-| Logica cliente | Cobertura, armado de notas, compresion de fotos, estados y cache local. |
-| Integracion servidor | Rutas API para validacion, service role, storage, cron y exportes. |
-| Persistencia | Supabase Database, Storage, Auth Admin y RPC. |
+- `Presentacion`: layouts, navegacion y pantallas bajo `app/`.
+- `Cliente`: cobertura, armado de notas, compresion de fotos, estado local y cache puntual.
+- `Servidor`: `/api/*`, exportes PDF, cron y operaciones con `service role`.
+- `Persistencia`: Supabase Database, Storage, Auth Admin y RPC.
 
 ### 3.3 Decisiones tecnicas relevantes
 
-| Decision | Estado observado | Impacto |
-| --- | --- | --- |
-| Render dinamico | varias paginas usan `dynamic = "force-dynamic"` | Prioriza consistencia frente a cache estatico. |
-| Build tolerante | `next.config.ts` ignora errores de ESLint y TypeScript | Facilita deploy, pero permite builds con problemas. |
-| Cliente primero | muchas escrituras van directo desde browser a Supabase | Simplifica UI, pero reparte logica y controles. |
-| Cache local puntual | existe una cache en memoria para pedidos por zona | Mejora UX, sin estrategia global de invalidacion. |
+- `Render dinamico`: varias paginas usan `dynamic = "force-dynamic"` para priorizar consistencia sobre cache estatico.
+- `Build tolerante`: `next.config.ts` ignora errores de ESLint y TypeScript; facilita despliegue, pero permite builds con defectos.
+- `Cliente primero`: muchas escrituras van directo del navegador a Supabase; simplifica la UI, pero dispersa controles.
+- `Cache local`: existe una cache en memoria para pedidos por zona; mejora UX, pero sin invalidacion global.
 
 ### 3.4 Dependencias externas no versionadas
 
-El proyecto depende de artefactos definidos fuera del repositorio:
-
-- RPC `inventario_actual`
-- RPC `ajustar_stock_absoluto`
-- buckets `consumos` y `canastillas-firmas`
-- tabla `inventario_snapshots`
-- tabla opcional `alertas_criticos_envios`
-- politicas RLS y configuracion de auth de Supabase
+Elementos requeridos fuera del repositorio: RPC `inventario_actual` y `ajustar_stock_absoluto`, buckets `consumos` y `canastillas-firmas`, tabla `inventario_snapshots`, tabla opcional `alertas_criticos_envios`, y politicas RLS o configuracion de auth de Supabase.
 
 ## 4. Estructura del repositorio
 
-| Ruta | Responsabilidad principal |
+| Ruta | Uso |
 | --- | --- |
-| `app/` | Pantallas y route handlers de Next.js. |
-| `app/(dashboard)` | Hook y componentes del dashboard principal. |
-| `app/pedidos` | Creacion, edicion, listado, vista y cache de pedidos. |
-| `app/inventario` | Operacion diaria de inventario y exporte PDF. |
-| `app/materiales` | CRUD de catalogo por zona. |
-| `app/historial` | Historial de pedidos completados o cancelados. |
-| `app/canastillas` | Flujo de prestamo o devolucion, inventario y proveedores. |
-| `app/admin/users` | UI tecnica para usuarios de Supabase Auth. |
-| `components/` | Componentes compartidos. |
-| `components/ui/` | Primitives reutilizables. |
+| `app/` | UI y handlers; incluye `(dashboard)`, `pedidos`, `inventario`, `materiales`, `historial`, `canastillas` y `admin/users`. |
+| `components/` | Componentes compartidos y primitives en `components/ui/`. |
 | `lib/` | Clientes Supabase y utilidades de dominio. |
 | `docs/` | Documentacion del proyecto. |
 | `public/` | Assets estaticos. |
 
-Archivos transversales importantes:
-
-- `app/layout.tsx`
-- `middleware.ts`
-- `next.config.ts`
-- `vercel.json`
-- `ecosystem.config.js`
+Archivos transversales: `app/layout.tsx`, `middleware.ts`, `next.config.ts`, `vercel.json` y `ecosystem.config.js`.
 
 ## 5. Modulos funcionales
 
-### Dashboard
-
-**Ruta:** `/`
-
-Responsabilidades:
-
-- mostrar pedidos pendientes;
-- resumir materiales por cobertura;
-- notificar nuevos materiales criticos;
-- permitir completar pedidos desde el panel.
-
-Archivos principales:
-
-- `app/page.tsx`
-- `app/(dashboard)/_hooks/use-dashboard-data.ts`
-- `app/(dashboard)/_components/*`
-
-### Materiales
-
-**Ruta:** `/materiales`
-
-Responsabilidades:
-
-- administrar materiales por zona;
-- configurar unidad de medida;
-- definir presentacion por bulto y tasa de consumo diaria;
-- aplicar baja logica con `activo = false`.
-
-### Pedidos
-
-**Rutas:** `/pedidos`, `/pedidos/nuevo`, `/pedidos/[id]`, `/pedidos/[id]/editar`, `/pedidos/[id]/ver`
-
-Capacidades:
-
-- listar pedidos por zona;
-- crear y editar pedidos;
-- cambiar estado;
-- completar pedidos y reflejar inventario;
-- deshacer pedidos completados;
-- exportar el pedido en PDF o vista imprimible.
-
-Estados observados:
-
-```text
-borrador -> enviado -> recibido -> completado
-                ^         |
-                |         |
-                +---------+  reversa operativa
-```
-
-El flujo principal moderno crea pedidos en estado `enviado`.
-
-### Inventario
-
-**Ruta:** `/inventario`
-
-Es el modulo operativo mas complejo.
-
-Capacidades:
-
-- consultar inventario por zona;
-- calcular cobertura y fecha estimada;
-- ajustar stock absoluto con RPC;
-- registrar consumos manuales;
-- adjuntar hasta 3 fotos por consumo;
-- deshacer consumos manuales;
-- deshacer pedidos completados ya aplicados a inventario;
-- validar materiales criticos con pedido pendiente.
-
-### Historial
-
-**Ruta:** `/historial`
-
-Consulta pedidos completados o cancelados con filtros por solicitante y rango de fechas.
-
-### Consumo especial de salmuera
-
-**Ruta:** `/Pconsumo`
-
-La pagina existe y registra movimientos `consumo_manual_salmuera`, pero `middleware.ts` bloquea cualquier acceso a `/pconsumo` con `403`.
-
-### Canastillas
-
-**Rutas:** `/canastillas`, `/canastillas/inventario`, `/canastillas/proveedores`
-
-Capacidades:
-
-- registrar prestamo o devolucion en un wizard;
-- capturar firma digital;
-- guardar firma en storage privado;
-- consultar historial e inventario;
-- editar y anular registros;
-- gestionar proveedores.
-
-### Administracion de usuarios
-
-**Ruta:** `/admin/users`
-
-Permite listar usuarios, crear usuarios y restablecer contrasenas con Supabase Auth Admin.
+- `Dashboard` (`/`): pedidos pendientes, cobertura, materiales criticos y completado rapido.
+- `Materiales` (`/materiales`): CRUD por zona, unidad, presentacion, tasa de consumo y baja logica.
+- `Pedidos` (`/pedidos`, `/pedidos/nuevo`, `/pedidos/[id]`, `/pedidos/[id]/editar`, `/pedidos/[id]/ver`): listado, creacion, edicion, cambios de estado, completado, reversa y exporte. Flujo observado: `borrador -> enviado -> recibido -> completado`; el flujo actual crea en `enviado`.
+- `Inventario` (`/inventario`): consulta, cobertura, ajuste por RPC, consumos manuales con fotos, deshacer consumos y reversa de pedidos ya aplicados.
+- `Historial` (`/historial`): pedidos completados o cancelados con filtros por solicitante y fechas.
+- `Pconsumo` (`/Pconsumo`): registra `consumo_manual_salmuera`, pero `middleware.ts` bloquea `/pconsumo` con `403`.
+- `Canastillas` (`/canastillas`, `/canastillas/inventario`, `/canastillas/proveedores`): prestamos/devoluciones, firma digital, historial, inventario, edicion, anulacion y proveedores.
+- `Admin users` (`/admin/users`): listar, crear usuarios y restablecer contrasenas con Supabase Auth Admin.
 
 ## 6. Rutas web y API
 
 ### 6.1 Rutas web principales
 
-| Ruta | Objetivo |
-| --- | --- |
-| `/` | Dashboard operativo. |
-| `/materiales` | CRUD de materiales. |
-| `/pedidos` | Listado de pedidos por zona. |
-| `/pedidos/nuevo` | Crear pedido. |
-| `/pedidos/[id]` | Editar pedido. |
-| `/pedidos/[id]/ver` | Vista de consulta y exporte. |
-| `/inventario` | Operacion de inventario. |
-| `/historial` | Historial de pedidos. |
-| `/canastillas` | Wizard de canastillas. |
-| `/canastillas/inventario` | Inventario e historial de canastillas. |
-| `/canastillas/proveedores` | CRUD de proveedores. |
-| `/Pconsumo` | Consumo especial de salmuera, hoy bloqueado. |
-| `/admin/users` | Administracion tecnica de usuarios. |
+- `Operacion`: `/`, `/inventario`, `/historial`.
+- `Pedidos`: `/pedidos`, `/pedidos/nuevo`, `/pedidos/[id]`, `/pedidos/[id]/editar`, `/pedidos/[id]/ver`.
+- `Canastillas`: `/canastillas`, `/canastillas/inventario`, `/canastillas/proveedores`.
+- `Catalogos y admin`: `/materiales`, `/admin/users`.
+- `Especial`: `/Pconsumo` existe, pero hoy esta bloqueada.
 
 ### 6.2 Route handlers
 
-| Metodo | Ruta | Proposito |
-| --- | --- | --- |
-| `POST` | `/api/pedidos` | Crear pedido validado. |
-| `GET` | `/api/inventario` | Obtener inventario actual por zona o global. |
-| `POST` | `/api/consumos/upload` | Subir fotos de consumo. |
-| `GET/POST/PUT` | `/api/admin/users` | Listar usuarios, crear usuario, cambiar contrasena. |
-| `POST` | `/api/canastillas` | Guardar canastillas con firma. |
-| `POST` | `/api/canastillas/firma` | Generar signed URL para una firma. |
-| `POST/PUT/DELETE` | `/api/canastillas/proveedores` | Crear, editar y eliminar o desactivar proveedor. |
-| `POST` | `/api/inventario/alerta-criticos/pedidos` | Validar materiales criticos con pedido pendiente. |
-| `GET` | `/api/inventario/alerta-criticos/cron` | Enviar alertas criticas por correo. |
-| `GET` | `/api/inventario/inventario-snapshots` | Consultar snapshots. |
-| `GET` | `/api/inventario/inventario-snapshots/cron` | Generar snapshot diario. |
-| `GET` | `/inventario/api/export/[id]` | Generar PDF tabular del pedido. |
+- `POST /api/pedidos`: crear pedido validado.
+- `GET /api/inventario`: obtener inventario actual por zona o global.
+- `POST /api/consumos/upload`: subir fotos de consumo.
+- `GET/POST/PUT /api/admin/users`: listar usuarios, crear usuario y cambiar contrasena.
+- `POST /api/canastillas`: guardar canastillas con firma.
+- `POST /api/canastillas/firma`: generar signed URL para una firma.
+- `POST/PUT/DELETE /api/canastillas/proveedores`: crear, editar y eliminar o desactivar proveedor.
+- `POST /api/inventario/alerta-criticos/pedidos`: validar materiales criticos con pedido pendiente.
+- `GET /api/inventario/alerta-criticos/cron`: enviar alertas criticas por correo.
+- `GET /api/inventario/inventario-snapshots`: consultar snapshots.
+- `GET /api/inventario/inventario-snapshots/cron`: generar snapshot diario.
+- `GET /inventario/api/export/[id]`: generar PDF tabular del pedido.
 
 ### 6.3 Reglas relevantes de API
 
@@ -277,72 +117,26 @@ Permite listar usuarios, crear usuarios y restablecer contrasenas con Supabase A
 | Tabla | Proposito |
 | --- | --- |
 | `zonas` | Plantas o zonas operativas. |
-| `materiales` | Catalogo de materiales por zona. |
+| `materiales` | Catalogo por zona. |
 | `pedidos` | Cabecera del pedido. |
-| `pedido_items` | Items de cada pedido. |
+| `pedido_items` | Items del pedido. |
 | `movimientos_inventario` | Entradas, salidas, consumos, reversas y ajustes. |
 | `inventario_snapshots` | Foto diaria del inventario. |
-| `canastillas` | Registros de prestamos y devoluciones. |
+| `canastillas` | Prestamos y devoluciones. |
 | `canastillas_proveedores` | Catalogo de proveedores. |
-| `alertas_criticos_envios` | Historial de correos de alertas criticas. |
+| `alertas_criticos_envios` | Historial de alertas criticas. |
 
-### 7.2 Campos clave por entidad
+### 7.2 Campos clave observados
 
-#### `materiales`
-
-Campos visibles en el codigo:
-
-- `id`
-- `zona_id`
-- `nombre`
-- `presentacion_kg_por_bulto`
-- `tasa_consumo_diaria_kg`
-- `proveedor`
-- `activo`
-- `unidad_medida`
-
-#### `pedidos`
-
-Campos visibles en el codigo:
-
-- `id`
-- `zona_id`
-- `fecha_pedido`
-- `fecha_entrega`
-- `solicitante`
-- `estado`
-- `total_bultos`
-- `total_kg`
-- `notas`
-- `cancelado_at`
-- `inventario_posteado`
-
-#### `movimientos_inventario`
-
-Campos visibles en el codigo:
-
-- `id`
-- `zona_id`
-- `material_id`
-- `fecha`
-- `tipo`
-- `bultos`
-- `kg`
-- `ref_tipo`
-- `ref_id`
-- `notas`
-- `dia_proceso`
-- `foto_url`
-- `created_at`
+| Entidad | Campos |
+| --- | --- |
+| `materiales` | `id`, `zona_id`, `nombre`, `presentacion_kg_por_bulto`, `tasa_consumo_diaria_kg`, `proveedor`, `activo`, `unidad_medida` |
+| `pedidos` | `id`, `zona_id`, `fecha_pedido`, `fecha_entrega`, `solicitante`, `estado`, `total_bultos`, `total_kg`, `notas`, `cancelado_at`, `inventario_posteado` |
+| `movimientos_inventario` | `id`, `zona_id`, `material_id`, `fecha`, `tipo`, `bultos`, `kg`, `ref_tipo`, `ref_id`, `notas`, `dia_proceso`, `foto_url`, `created_at` |
 
 Valores observados de `ref_tipo`:
 
-- `pedido`
-- `pedido_deshacer`
-- `consumo_manual_salmuera`
-- `consumo_manual_agujas`
-- `deshacer_consumo`
-- `consumo_manual_anulado`
+`pedido`, `pedido_deshacer`, `consumo_manual_salmuera`, `consumo_manual_agujas`, `deshacer_consumo` y `consumo_manual_anulado`.
 
 ### 7.3 RPC requeridas
 
@@ -353,10 +147,8 @@ Valores observados de `ref_tipo`:
 
 ### 7.4 Buckets requeridos
 
-| Bucket | Visibilidad | Uso |
-| --- | --- | --- |
-| `consumos` | publico | fotos de consumos manuales |
-| `canastillas-firmas` | privado | firmas de canastillas |
+- `consumos` (publico): fotos de consumos manuales.
+- `canastillas-firmas` (privado): firmas de canastillas.
 
 ## 8. Flujos operativos clave
 
@@ -399,36 +191,27 @@ Valores observados de `ref_tipo`:
 ### Snapshots y alertas
 
 - `/api/inventario/inventario-snapshots/cron` hace `upsert` diario en `inventario_snapshots`.
-- `/api/inventario/alerta-criticos/cron` detecta materiales con cobertura `<= 3`, valida pedidos pendientes y envia correo por Resend.
+- `/api/inventario/alerta-criticos/cron` detecta materiales con cobertura `<= 3`, valida pedidos pendientes y envia correo por `Resend`.
 
 ## 9. Despliegue y operacion
 
 ### 9.1 Variables de entorno
 
-| Variable | Uso |
-| --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Cliente browser y servidor. |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Cliente browser y algunas lecturas sin service role. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Rutas API privilegiadas, storage y admin. |
-| `RESEND_API_KEY` | Envio de alertas criticas por correo. |
-| `ALERTA_CRITICA_FROM` | Remitente del correo de alertas. |
+- `NEXT_PUBLIC_SUPABASE_URL`: cliente browser y servidor.
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: cliente browser y algunas lecturas sin service role.
+- `SUPABASE_SERVICE_ROLE_KEY`: rutas API privilegiadas, storage y admin.
+- `RESEND_API_KEY`: envio de alertas criticas por correo.
+- `ALERTA_CRITICA_FROM`: remitente del correo de alertas.
 
 ### 9.2 Cron jobs de `vercel.json`
 
-| Horario | Ruta | Estado |
-| --- | --- | --- |
-| `0 22 * * *` | `/api/consumo/cron` | Ruta inexistente en el repo. |
-| `0 23 * * *` | `/api/inventario/inventario-snapshots/cron` | Implementado. |
-| `0 12 * * *` | `/api/inventario/alerta-criticos/cron` | Implementado. |
+- `0 22 * * *` -> `/api/consumo/cron`: ruta inexistente en el repo.
+- `0 23 * * *` -> `/api/inventario/inventario-snapshots/cron`: implementado.
+- `0 12 * * *` -> `/api/inventario/alerta-criticos/cron`: implementado.
 
 ### 9.3 PM2
 
-`ecosystem.config.js` define una alternativa de despliegue self-hosted con:
-
-- nombre `pedidos`
-- `npm run start`
-- puerto `3000`
-- reinicio por memoria en `400M`
+`ecosystem.config.js` define una alternativa self-hosted con app `pedidos`, comando `npm run start`, puerto `3000` y reinicio por memoria en `400M`.
 
 ## 10. Riesgos y deuda tecnica
 
@@ -462,13 +245,4 @@ Artefactos legacy o ambiguos:
 
 ## 12. Validacion minima recomendada
 
-Despues de levantar o desplegar la app, validar como minimo:
-
-1. `/`
-2. `/pedidos`
-3. `/inventario`
-4. `/canastillas`
-5. `GET /api/inventario`
-6. creacion de pedidos
-7. carga de fotos de consumo
-8. guardado de firmas de canastillas
+Despues de levantar o desplegar la app, validar como minimo: `/`, `/pedidos`, `/inventario`, `/canastillas`, `GET /api/inventario`, creacion de pedidos, carga de fotos de consumo y guardado de firmas de canastillas.
